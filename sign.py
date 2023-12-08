@@ -1,35 +1,31 @@
 import asyncio
-from httpx import AsyncClient
-from time import time, sleep, asctime
-from datetime import datetime
-from calendar import monthrange
-from loguru import logger
-from fastapi import FastAPI, BackgroundTasks, Body, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-from starlette.requests import Request
-from typing import Dict, Union
-from diskcache import Cache
-from json import dumps
-import hmac
 import hashlib
-from base64 import b64encode
-from pathlib import Path
-from uuid import uuid4
-from random import uniform, sample
-from urllib.parse import urlparse, parse_qs
-
-# 使用apscheduler 调用定时任务
-from datetime import datetime, timedelta
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.executors.pool import ThreadPoolExecutor, ProcessPoolExecutor
-# from apscheduler.jobstores.redis import RedisJobStore
-from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
-from dateutil.parser import parse
+import hmac
+import os
 import socket
 import sys
-import os
+from base64 import b64encode
+from calendar import monthrange
+# 使用apscheduler 调用定时任务
+from datetime import datetime
+from json import dumps
+from pathlib import Path
+from random import uniform, sample
+from time import time, sleep, asctime
+from typing import Union
+from uuid import uuid4
 
+from apscheduler.executors.pool import ThreadPoolExecutor, ProcessPoolExecutor
+from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+# from dateutil.parser import parse
+from diskcache import Cache
+
+from fastapi import FastAPI, BackgroundTasks, Body, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from httpx import AsyncClient
+from loguru import logger
+from starlette.requests import Request
 
 db_path = str(Path(__file__).parent / "tmp")
 
@@ -116,39 +112,43 @@ app.add_middleware(
 
 
 # 程序开始
-@app.on_event("startup")
-async def startup_event():
-    print("程序开始")
-    print(f'设备IP: {socket.gethostbyname(socket.gethostname())} 当127.0.0.1无法访问时，可以使用设备ip替换')
-    for k in cache.iterkeys():
-        if k.startswith("jd_"):
-            if not cache[k]:
-                cache.delete("test_pageId")
-    try:
-        scheduler.start()
-        print(scheduler.get_jobs())
-        scheduler.remove_all_jobs()
-    except Exception as e:
-        print(f'定时任务启动异常{e}')
+# @app.on_event("startup")
+# async def startup_event():
+#     print("程序开始")
+#     print(f'设备IP: {socket.gethostbyname(socket.gethostname())} 当127.0.0.1无法访问时，可以使用设备ip替换')
+#     for k in cache.iterkeys():
+#         if k.startswith("jd_"):
+#             if not cache[k]:
+#                 cache.delete("test_pageId")
+#     try:
+#         scheduler.start()
+#         print(scheduler.get_jobs())
+#         scheduler.remove_all_jobs()
+#     except Exception as e:
+#         print(f'定时任务启动异常{e}')
 
 
-# 程序停止
-@app.on_event("shutdown")
-async def shutdown_event():
-    print("程序结束")
-    scheduler.shutdown(wait=False)
+# # 程序停止
+# @app.on_event("shutdown")
+# async def shutdown_event():
+#     print("程序结束")
+#     scheduler.shutdown(wait=False)
 
 
 # 京豆签到
 @app.post("/signBeanAct", tags=["京东签到"])
 async def api(request: Request, background_tasks: BackgroundTasks,
               pt_pin: Union[str, None] = Body(default="jd_XXX"),
-              pt_key: Union[str, None] = Body(default="AAJkPgXXX_XXX"), time: Union[str, None] = Body(default="09:00:00")):
+              pt_key: Union[str, None] = Body(default="AAJkPgXXX_XXX"),
+              time: Union[str, None] = Body(default="09:00:00")):
     cache.set(pt_pin, pt_key)
-    data_time = parse(time)
+    data_time = datetime.strptime(time, "%H:%M:%S")
     background_tasks.add_task(signBeanAct, **{"pt_pin": pt_pin, "pt_key": pt_key})
     task_id = str(uuid4())
-    scheduler.add_job(id=pt_pin, name=f'{pt_pin}', func=signBeanAct, kwargs={"pt_pin": pt_pin, "pt_key": pt_key}, trigger='cron', hour=data_time.hour, minute=data_time.minute, second=data_time.second, replace_existing=True)
+    scheduler.add_job(id=pt_pin, name=f'{pt_pin}', func=signBeanAct,
+                      kwargs={"pt_pin": pt_pin, "pt_key": pt_key}, trigger='cron',
+                      hour=data_time.hour, minute=data_time.minute, second=data_time.second,
+                      replace_existing=True)
     return {"code": 200, "msg": f'{pt_pin} 已更新', "task_id": f'{task_id}'}
 
 
@@ -157,7 +157,7 @@ async def api(request: Request, background_tasks: BackgroundTasks,
 async def api(request: Request, path: str, background_tasks: BackgroundTasks,
               token: Union[str, None] = Body(default="XXX"), time: Union[str, None] = Body(default="09:00:00")):
     result = {"code": 400, "msg": "请检查路由路径!"}
-    data_time = parse(time)
+    data_time = datetime.strptime(time, "%H:%M:%S")
     path_dict = {"csairSign": csairSign, "sichuanairSign": sichuanairSign, "ctripSign": ctripSign, "dragon_boat_2023":dragon_boat_2023, "meituan": meituan, "weimob": weimob, "10086": m10086, "10010": m10010, "dp": youzan_dp, "95516": m95516, "kraf": kraf, "erke": demogic_erke}
     if path in path_dict.keys():
         background_tasks.add_task(path_dict[path], **{"token": token})
@@ -1151,7 +1151,7 @@ async def demogic_erke(**kwargs):
     await dingAlert(**result)
 
 
-# 腾讯自选股
+# 腾讯自选股l
 async def qqstock(**kwargs):
     openid = kwargs.get("openid", "")
     fskey = kwargs.get("fskey", "")
